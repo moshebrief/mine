@@ -1,0 +1,51 @@
+{
+  "name": "mine-next-edit",
+  "displayName": "Mine — Next Edit (self-hosted, learns from you)",
+  "description": "Tab-to-accept next-edit predictions from your own self-hosted model that keeps training on what you accept and reject.",
+  "version": "1.0.0",
+  "publisher": "moshebrief",
+  "license": "Apache-2.0",
+  "repository": { "type": "git", "url": "https://github.com/moshebrief/mine" },
+  "engines": { "vscode": "^1.85.0" },
+  "categories": ["Machine Learning", "Programming Languages"],
+  "activationEvents": ["onStartupFinished"],
+  "main": "./out/extension.js",
+  "contributes": {
+    "commands": [
+      { "command": "mine.setToken", "title": "Mine: Set API Token" },
+      { "command": "mine.setServerUrl", "title": "Mine: Set Server URL" },
+      { "command": "mine.toggle", "title": "Mine: Turn Suggestions On/Off" },
+      { "command": "mine.openDashboard", "title": "Mine: Open Dashboard" },
+      { "command": "mine.trainNow", "title": "Mine: Train Now" },
+      { "command": "mine.acceptEdit", "title": "Mine: Accept Suggested Edit" },
+      { "command": "mine.rejectEdit", "title": "Mine: Reject Suggested Edit" }
+    ],
+    "keybindings": [
+      { "command": "mine.acceptEdit", "key": "tab", "when": "editorTextFocus && mine.editVisible && !inlineSuggestionVisible && !suggestWidgetVisible" },
+      { "command": "mine.rejectEdit", "key": "escape", "when": "editorTextFocus && mine.editVisible" }
+    ],
+    "configuration": {
+      "title": "Mine",
+      "properties": {
+        "mine.serverUrl": { "type": "string", "default": "", "description": "Your Mine server URL, e.g. https://abc123-8000.proxy.runpod.net" },
+        "mine.enabled": { "type": "boolean", "default": true, "description": "Show next-edit suggestions." },
+        "mine.debounceMs": { "type": "number", "default": 250, "description": "Wait this long after you stop typing before asking the model." },
+        "mine.feedbackDelaySeconds": { "type": "number", "default": 20, "description": "After you reject a suggestion, wait this long, then teach the model what you actually wrote." }
+      }
+    }
+  },
+  "scripts": {
+    "build": "esbuild src/extension.ts --bundle --platform=node --target=node18 --external:vscode --outfile=out/extension.js --minify",
+    "typecheck": "tsc --noEmit",
+    "package": "npm run build && vsce package --no-dependencies -o mine-next-edit.vsix"
+  },
+  "dependencies": { "diff": "^5.2.0" },
+  "devDependencies": {
+    "@types/diff": "^5.2.0",
+    "@types/node": "^18.19.0",
+    "@types/vscode": "~1.85.0",
+    "@vscode/vsce": "^3.2.0",
+    "esbuild": "^0.24.0",
+    "typescript": "^5.6.0"
+  }
+}

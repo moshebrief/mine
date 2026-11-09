@@ -1,0 +1,5 @@
+vllm==0.33.0
+fastapi
+uvicorn
+httpx
+pydantic>=2

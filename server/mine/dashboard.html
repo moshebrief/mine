@@ -1,0 +1,100 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mine — your model</title>
+<style>
+  :root { --bg:#0d0f12; --card:#161a20; --ink:#e8eaed; --dim:#8b93a1; --acc:#7cc4ff; --ok:#6fdc8c; --bad:#ff7b72; }
+  * { box-sizing:border-box; }
+  body { margin:0; font:15px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background:var(--bg); color:var(--ink); padding:18px; max-width:760px; margin:auto; }
+  h1 { font-size:22px; margin:4px 0 2px; } .sub { color:var(--dim); margin-bottom:16px; }
+  .card { background:var(--card); border-radius:14px; padding:14px 16px; margin-bottom:12px; }
+  .row { display:flex; gap:12px; flex-wrap:wrap; }
+  .stat { flex:1 1 140px; } .stat b { display:block; font-size:24px; } .stat span { color:var(--dim); font-size:13px; }
+  table { width:100%; border-collapse:collapse; font-size:14px; } td,th { text-align:left; padding:6px 4px; border-bottom:1px solid #232831; } th { color:var(--dim); font-weight:500; }
+  button { background:var(--acc); color:#04121f; border:0; border-radius:10px; padding:11px 16px; font-weight:600; font-size:15px; margin:4px 6px 4px 0; }
+  button.ghost { background:#232831; color:var(--ink); }
+  input { width:100%; padding:11px; border-radius:10px; border:1px solid #2b313b; background:#0d0f12; color:var(--ink); font-size:15px; }
+  pre { white-space:pre-wrap; font-size:12px; color:var(--dim); max-height:260px; overflow:auto; margin:0; }
+  .ok { color:var(--ok); } .bad { color:var(--bad); }
+</style>
+</head>
+<body>
+<h1>Mine</h1>
+<div class="sub">Your self-hosted next-edit model that keeps learning from you.</div>
+
+<div class="card" id="login" style="display:none">
+  <p>Paste your server token (it's printed in the pod terminal when the server starts).</p>
+  <input id="tok" placeholder="mine_..." autocomplete="off">
+  <p><button onclick="saveTok()">Connect</button></p>
+</div>
+
+<div id="app" style="display:none">
+  <div class="card row">
+    <div class="stat"><b id="active">–</b><span>active model</span></div>
+    <div class="stat"><b id="rate">–</b><span>accept rate (active)</span></div>
+    <div class="stat"><b id="learn">–</b><span>examples learned from</span></div>
+    <div class="stat"><b id="next">–</b><span>until next auto-train</span></div>
+  </div>
+  <div class="card">
+    <div id="phase">–</div>
+    <p>
+      <button onclick="train()">Train now</button>
+      <button class="ghost" onclick="rollback('base')">Roll back to base</button>
+      <button class="ghost" onclick="load()">Refresh</button>
+    </p>
+  </div>
+  <div class="card">
+    <b>Accept rate by version</b> <span class="sub">— this should go up as it learns you</span>
+    <table id="pm"><tr><th>model</th><th>shown</th><th>accepted</th><th>rate</th><th>latency</th></tr></table>
+  </div>
+  <div class="card">
+    <b>Versions</b>
+    <table id="vs"><tr><th>name</th><th>trained on</th><th>score</th><th>prev</th><th>result</th></tr></table>
+  </div>
+  <div class="card"><b>Training log</b><pre id="log"></pre></div>
+  <p><button class="ghost" onclick="logout()">Forget token on this device</button></p>
+</div>
+
+<script>
+let TOKEN = null;
+try { TOKEN = localStorage.getItem("mine_token"); } catch (e) {}
+const $ = id => document.getElementById(id);
+function saveTok() { TOKEN = $("tok").value.trim(); try { localStorage.setItem("mine_token", TOKEN); } catch (e) {} boot(); }
+function logout() { try { localStorage.removeItem("mine_token"); } catch (e) {} TOKEN = null; boot(); }
+async function api(path, opts = {}) {
+  const r = await fetch(path, { ...opts, headers: { Authorization: "Bearer " + TOKEN, "Content-Type": "application/json" } });
+  if (r.status === 401) { logout(); throw new Error("bad token"); }
+  return path.endsWith("train_log") ? r.text() : r.json();
+}
+function pct(x) { return x == null ? "–" : Math.round(x * 100) + "%"; }
+async function load() {
+  const s = await api("/v1/stats");
+  $("active").textContent = s.active_model;
+  const cur = s.per_model.find(m => m.model === s.active_model);
+  $("rate").textContent = cur ? pct(cur.accept_rate) : "–";
+  $("learn").textContent = s.learnable_examples;
+  $("next").textContent = Math.max(0, s.train_every - s.new_since_last_train);
+  $("phase").innerHTML = s.training ? "⏳ " + s.phase
+    : s.train_error ? '<span class="bad">Last training failed: ' + s.train_error + "</span>"
+    : "Status: " + s.phase;
+  $("pm").innerHTML = "<tr><th>model</th><th>shown</th><th>accepted</th><th>rate</th><th>latency</th></tr>" +
+    s.per_model.map(m => `<tr><td>${m.model}</td><td>${m.shown}</td><td>${m.accepted}</td><td>${pct(m.accept_rate)}</td><td>${m.avg_latency_ms} ms</td></tr>`).join("");
+  $("vs").innerHTML = "<tr><th>name</th><th>trained on</th><th>score</th><th>prev</th><th>result</th></tr>" +
+    s.versions.map(v => `<tr><td>${v.name}</td><td>${v.n_train}</td><td>${v.score == null ? "–" : v.score.toFixed(3)}</td><td>${v.base_score == null ? "–" : v.base_score.toFixed(3)}</td><td class="${v.promoted ? "ok" : "bad"}">${v.notes}</td></tr>`).join("");
+  $("log").textContent = await api("/v1/train_log");
+}
+async function train() { const r = await api("/v1/train", { method: "POST" }); alertLine(r.started ? "Training started" : r.reason); load(); }
+async function rollback(to) { await api("/v1/rollback?to=" + encodeURIComponent(to), { method: "POST" }); load(); }
+function alertLine(t) { $("phase").textContent = t; }
+function boot() {
+  $("login").style.display = TOKEN ? "none" : "block";
+  $("app").style.display = TOKEN ? "block" : "none";
+  if (TOKEN) load().catch(e => alertLine(e.message));
+}
+boot();
+setInterval(() => { if (TOKEN) load().catch(() => {}); }, 15000);
+</script>
+</body>
+</html>
